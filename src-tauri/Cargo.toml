@@ -1,6 +1,6 @@
 [package]
 name = "liteask"
-version = "0.2.4"
+version = "0.2.5"
 description = "Lightweight AI selection assistant and Quick Ask popup"
 authors = ["LiteAsk"]
 edition = "2021"
