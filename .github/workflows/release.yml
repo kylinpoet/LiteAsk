@@ -51,9 +51,8 @@ jobs:
           releaseBody: |
             ## LiteAsk v__VERSION__
 
-            - 修复 macOS 在 `LSUIElement=true` 隐藏 Dock 图标后从「应用程序」或 Spotlight 再次打开 LiteAsk 未唤出窗口的问题（底层注册 `NSAppleEventManager` 的 `kAEReopenApplication` / `kAEOpenApplication` 事件，并自动移动到当前活跃桌面）
-            - 修复 macOS 偏好设置窗口不再压住系统设置窗口（恢复 `NSNormalWindowLevel`），方便授权操作
-            - 增强 macOS 辅助功能权限引导：新增「重置旧记录」一键按钮（清除升级后失效的旧签名 TCC 缓存并打开系统设置），授权通过后自动通知并刷新设置页状态
+            - 修复划词「翻译 / 解释」浮窗不翻译、只复述「请翻译以下内容：…」的问题：翻译与解释指令改由 system 提示下发，user 消息只发送原文本身，并强化「只输出译文、禁止复述原文或指令」约束（自定义供应商 / 中转模型更明显）
+            - 划词浮窗内继续追问时，不再把追问误当成新原文重新翻译
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

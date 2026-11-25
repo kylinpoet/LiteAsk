@@ -1,7 +1,7 @@
 {
   "name": "liteask",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Lightweight cross-platform (macOS & Windows) AI selection assistant and global Quick Ask popup powered by Tauri v2",
   "type": "module",
   "scripts": {
