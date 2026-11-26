@@ -13,6 +13,8 @@ export const REASONING_EFFORT_OPTIONS: { value: ReasoningEffort; label: string; 
   { value: "default", label: "跟随模型默认", short: "默认" },
 ];
 
+export type ProviderKind = "chat" | "translate";
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -20,6 +22,8 @@ export interface ProviderConfig {
   apiKey: string;
   model: string;
   isBuiltin?: boolean;
+  /** chat：通用对话模型；translate：只做翻译的网关（如豆包翻译网关） */
+  kind?: ProviderKind;
 }
 
 export interface AppSettings {
@@ -73,6 +77,17 @@ export interface AiDonePayload {
 export interface AiErrorPayload {
   requestId: string;
   error: string;
+}
+
+export function activeProvider(settings: AppSettings): ProviderConfig | undefined {
+  return (
+    settings.providers?.find((p) => p.id === settings.activeProviderId) ?? settings.providers?.[0]
+  );
+}
+
+/** 当前供应商是否是「翻译网关」：只翻译，不能解释 / 对话。 */
+export function isTranslateGateway(settings: AppSettings): boolean {
+  return activeProvider(settings)?.kind === "translate";
 }
 
 export function createRequestId(): string {

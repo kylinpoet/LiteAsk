@@ -2,7 +2,7 @@ mod ai;
 mod config;
 mod selection;
 
-use ai::{AiManager, ChatMessage};
+use ai::{AiManager, ChatMessage, TranslateGatewayOptions};
 use config::{load_settings, read_opencode_go_api_key, save_settings, AppSettings};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -316,6 +316,17 @@ fn trigger_selection_action(
     Ok(())
 }
 
+/// LiteAsk 的目标语言 → 翻译网关的语言码。
+/// 「智能中英」(zh-CN) 返回 None，交给网关按「中文→英文、非中文→中文」自动判断。
+fn gateway_target_lang(target_lang: &str) -> Option<String> {
+    match target_lang.trim().to_ascii_lowercase().as_str() {
+        "" | "zh" | "zh-cn" | "auto" | "smart" => None,
+        "en" | "en-us" | "en-gb" | "english" => Some("en".to_string()),
+        "ja" | "jp" | "japanese" => Some("ja".to_string()),
+        other => Some(other.to_string()),
+    }
+}
+
 /// Run or re-run translate/explain or send follow-up question in the Action window
 #[tauri::command]
 fn run_selection_ai(
@@ -329,6 +340,23 @@ fn run_selection_ai(
     follow_ups: Vec<ChatMessage>,
 ) -> Result<String, String> {
     let settings = state.settings.lock().clone();
+    let is_gateway = settings.active_provider_is_translate_gateway();
+
+    if is_gateway {
+        if action != "translate" {
+            return Err(
+                "当前供应商是「翻译网关」（只做翻译，无法解释或对话）。请在「设置 → 模型供应商」里切换到一个对话模型后再试。"
+                    .to_string(),
+            );
+        }
+        if !follow_ups.is_empty() {
+            return Err(
+                "翻译网关不支持继续追问，请在「设置 → 模型供应商」里切换到对话模型后再追问。"
+                    .to_string(),
+            );
+        }
+    }
+
     let req_id = if request_id.trim().is_empty() {
         Uuid::new_v4().to_string()
     } else {
@@ -342,7 +370,24 @@ fn run_selection_ai(
         }
     });
 
-    let messages = AiManager::build_selection_messages(&action, &text, &target_lang, &follow_ups);
+    // 翻译网关不认识 system 提示，也不该收到历史（它会把每条非 system 消息都当原文翻译）。
+    let (messages, translate_gateway) = if is_gateway {
+        (
+            vec![ChatMessage {
+                role: "user".to_string(),
+                content: text.clone(),
+            }],
+            Some(TranslateGatewayOptions {
+                target_lang: gateway_target_lang(&target_lang),
+                scene: 3,
+            }),
+        )
+    } else {
+        (
+            AiManager::build_selection_messages(&action, &text, &target_lang, &follow_ups),
+            None,
+        )
+    };
 
     let session_id = {
         let mut guard = state.action_session_id.lock();
@@ -360,6 +405,7 @@ fn run_selection_ai(
         settings,
         messages,
         effort,
+        translate_gateway,
     );
     Ok(req_id)
 }
@@ -374,6 +420,12 @@ fn run_quick_ask_ai(
     reasoning_effort: Option<String>,
 ) -> Result<String, String> {
     let settings = state.settings.lock().clone();
+    if settings.active_provider_is_translate_gateway() {
+        return Err(
+            "当前供应商是「翻译网关」（只做翻译），弹窗助手需要对话模型。请在「设置 → 模型供应商」里切换供应商。"
+                .to_string(),
+        );
+    }
     let req_id = if request_id.trim().is_empty() {
         Uuid::new_v4().to_string()
     } else {
@@ -404,6 +456,7 @@ fn run_quick_ask_ai(
         settings,
         full_messages,
         effort,
+        None,
     );
 
     Ok(req_id)

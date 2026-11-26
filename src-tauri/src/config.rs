@@ -23,6 +23,10 @@ fn default_provider_id() -> String {
     DEFAULT_PROVIDER_ID.to_string()
 }
 
+fn default_provider_kind() -> String {
+    "chat".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
@@ -33,6 +37,15 @@ pub struct ProviderConfig {
     pub model: String,
     #[serde(default)]
     pub is_builtin: bool,
+    /// `chat`（默认）：通用对话模型；`translate`：只做翻译的服务（如豆包翻译网关）。
+    #[serde(default = "default_provider_kind")]
+    pub kind: String,
+}
+
+impl ProviderConfig {
+    pub fn is_translate_gateway(&self) -> bool {
+        self.kind.eq_ignore_ascii_case("translate")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +74,21 @@ pub struct AppSettings {
 }
 
 impl AppSettings {
+    /// 当前生效的供应商配置。
+    pub fn active_provider(&self) -> Option<&ProviderConfig> {
+        self.providers
+            .iter()
+            .find(|p| p.id == self.active_provider_id)
+            .or_else(|| self.providers.first())
+    }
+
+    /// 当前供应商是否是「翻译网关」（只做翻译，不能解释/对话）。
+    pub fn active_provider_is_translate_gateway(&self) -> bool {
+        self.active_provider()
+            .map(ProviderConfig::is_translate_gateway)
+            .unwrap_or(false)
+    }
+
     /// Ensures `providers` is populated and top-level `base_url` / `api_key` / `model`
     /// always mirror the currently active provider.
     pub fn normalize_providers(&mut self) {
@@ -92,6 +120,7 @@ impl AppSettings {
                 api_key,
                 model,
                 is_builtin: is_opencode,
+                kind: default_provider_kind(),
             });
             self.active_provider_id = DEFAULT_PROVIDER_ID.to_string();
         }
@@ -118,6 +147,7 @@ impl Default for AppSettings {
             api_key: key.clone(),
             model: DEFAULT_MODEL.to_string(),
             is_builtin: true,
+            kind: default_provider_kind(),
         };
         Self {
             api_key: key,

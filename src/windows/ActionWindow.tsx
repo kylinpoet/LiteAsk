@@ -18,6 +18,7 @@ import {
 import {
   api,
   createRequestId,
+  isTranslateGateway,
   REASONING_EFFORT_OPTIONS,
   type ActionOpenPayload,
   type AiChunkPayload,
@@ -48,6 +49,7 @@ export function ActionWindow() {
   const [translateEffort, setTranslateEffort] = useState<ReasoningEffort>("none");
   const [explainEffort, setExplainEffort] = useState<ReasoningEffort>("low");
 
+  const [gatewayMode, setGatewayMode] = useState(false);
   const [turns, setTurns] = useState<TurnItem[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -96,6 +98,7 @@ export function ActionWindow() {
       setShowReasoning(s.showReasoning);
       setTranslateEffort(s.translateReasoningEffort || "none");
       setExplainEffort(s.explainReasoningEffort || "low");
+      setGatewayMode(isTranslateGateway(s));
     });
   }, []);
 
@@ -118,6 +121,7 @@ export function ActionWindow() {
         setShowReasoning(ev.payload.showReasoning);
         setTranslateEffort(ev.payload.translateReasoningEffort || "none");
         setExplainEffort(ev.payload.explainReasoningEffort || "low");
+        setGatewayMode(isTranslateGateway(ev.payload));
       }),
       listen<ActionOpenPayload>("action:open", (ev) => {
         const { action: nextAction, text, targetLang: lang, reasoningEffort } = ev.payload;
@@ -172,6 +176,7 @@ export function ActionWindow() {
   const currentEffort = action === "translate" ? translateEffort : explainEffort;
 
   const handleSwitchMode = (nextAction: "translate" | "explain") => {
+    if (gatewayMode && nextAction === "explain") return;
     const effort = nextAction === "translate" ? translateEffort : explainEffort;
     void startFreshRun(nextAction, sourceText, targetLang, effort);
   };
@@ -261,7 +266,13 @@ export function ActionWindow() {
             <button
               type="button"
               onClick={() => handleSwitchMode("explain")}
-              className={`h-6.5 px-2.5 rounded-lg text-[12px] font-medium flex items-center gap-1 transition-colors cursor-pointer ${
+              disabled={gatewayMode}
+              title={gatewayMode ? "当前供应商是翻译网关，仅支持翻译" : undefined}
+              className={`h-6.5 px-2.5 rounded-lg text-[12px] font-medium flex items-center gap-1 transition-colors ${
+                gatewayMode
+                  ? "opacity-40 cursor-not-allowed text-[var(--text-muted)]"
+                  : "cursor-pointer"
+              } ${
                 action === "explain"
                   ? "bg-[var(--accent)] text-white"
                   : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
@@ -270,6 +281,15 @@ export function ActionWindow() {
               <BookOpen className="w-3.5 h-3.5" />
               解释
             </button>
+
+            {gatewayMode && (
+              <span
+                className="h-6 px-1.5 rounded-md bg-[var(--surface-subtle)] text-[10.5px] text-[var(--text-muted)] flex items-center shrink-0"
+                title="当前供应商只做翻译（如豆包翻译网关）：解释与追问需切换对话模型"
+              >
+                翻译网关
+              </span>
+            )}
 
             {action === "translate" ? (
               <select
@@ -460,8 +480,9 @@ export function ActionWindow() {
                 void handleFollowUp();
               }
             }}
-            placeholder="继续追问这段内容..."
-            className="flex-1 h-8 px-2.5 rounded-xl bg-[var(--surface-subtle)] border border-transparent focus:border-[var(--accent)] outline-none text-[12.5px] select-text"
+            disabled={gatewayMode}
+            placeholder={gatewayMode ? "当前供应商是翻译网关，仅支持翻译" : "继续追问这段内容..."}
+            className="flex-1 h-8 px-2.5 rounded-xl bg-[var(--surface-subtle)] border border-transparent focus:border-[var(--accent)] outline-none text-[12.5px] select-text disabled:opacity-60 disabled:cursor-not-allowed"
           />
           {streaming ? (
             <button
@@ -476,7 +497,7 @@ export function ActionWindow() {
             <button
               type="button"
               onClick={() => void handleFollowUp()}
-              disabled={!followUpInput.trim()}
+              disabled={!followUpInput.trim() || gatewayMode}
               className="h-8 w-8 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center disabled:opacity-35 hover:opacity-90 cursor-pointer"
               title="发送追问"
             >

@@ -38,6 +38,18 @@ pub struct AiErrorPayload {
     pub error: String,
 }
 
+/// 翻译网关（如 doubao-trans-gateway）的请求选项。
+///
+/// 这类服务不是对话模型：它把消息正文全部当成待翻译文本，靠扩展字段/正则判定目标语言。
+/// 因此走它时必须显式指定语言、只发纯文本，且不能带 system 与历史消息。
+#[derive(Debug, Clone)]
+pub struct TranslateGatewayOptions {
+    /// `None` 表示交给网关自动判断方向（对应「智能中英」）。
+    pub target_lang: Option<String>,
+    /// 场景标签：1 整页 / 2 AI 阅读器 / 3 划词 / 4 截图 / 5 图片文字 / 6 悬停。
+    pub scene: u32,
+}
+
 pub struct AiManager {
     client: Client,
     active_cancels: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
@@ -104,6 +116,7 @@ impl AiManager {
         settings: AppSettings,
         messages: Vec<ChatMessage>,
         reasoning_effort: String,
+        translate_gateway: Option<TranslateGatewayOptions>,
     ) {
         self.cancel(&request_id);
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
@@ -124,6 +137,7 @@ impl AiManager {
                 &settings,
                 messages,
                 &reasoning_effort,
+                translate_gateway.as_ref(),
                 &mut cancel_rx,
             )
             .await;
@@ -302,6 +316,39 @@ fn build_request_payload(
     obj
 }
 
+/// 翻译网关的请求体：只发纯文本 messages、显式 `target_lang`、附带场景标签。
+///
+/// 这类服务会忽略 system 提示、把每条非 system 消息都当译文原文，所以：
+/// - 不带 system（语言靠 `target_lang` 字段表达，而不是提示词）；
+/// - 不带历史（否则会把历史译文一起翻出来）。
+fn build_translate_gateway_payload(
+    settings: &AppSettings,
+    messages: &[ChatMessage],
+    options: &TranslateGatewayOptions,
+) -> serde_json::Value {
+    let texts: Vec<&str> = messages
+        .iter()
+        .filter(|m| m.role != "system")
+        .map(|m| m.content.as_str())
+        .collect();
+
+    let mut obj = serde_json::json!({
+        "model": settings.model.trim(),
+        "messages": [{ "role": "user", "content": texts.join("\n") }],
+        "stream": true,
+        "scene": options.scene
+    });
+
+    if let Some(lang) = options.target_lang.as_deref() {
+        let lang = lang.trim();
+        if !lang.is_empty() {
+            obj["target_lang"] = serde_json::Value::String(lang.to_string());
+        }
+    }
+
+    obj
+}
+
 async fn send_with_retry(
     client: &Client,
     endpoint: &str,
@@ -363,6 +410,7 @@ async fn stream_chat_completion(
     settings: &AppSettings,
     messages: Vec<ChatMessage>,
     reasoning_effort: &str,
+    translate_gateway: Option<&TranslateGatewayOptions>,
     cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<bool, String> {
     if settings.base_url.trim().is_empty() {
@@ -380,7 +428,10 @@ async fn stream_chat_completion(
         settings.base_url.trim().trim_end_matches('/')
     );
 
-    let payload = build_request_payload(settings, &messages, reasoning_effort);
+    let payload = match translate_gateway {
+        Some(options) => build_translate_gateway_payload(settings, &messages, options),
+        None => build_request_payload(settings, &messages, reasoning_effort),
+    };
 
     let Some(response) = send_with_retry(
         client,
@@ -488,10 +539,14 @@ fn build_translate_system_prompt(target_lang: &str) -> String {
             "你是专业翻译引擎。用户消息就是待翻译的原文，请把它精准、自然地翻译成日文。{}",
             OUTPUT_RULES
         ),
+        // 注意：这里刻意不写「翻译成简体中文／翻译成英文」这类字面。
+        // 豆包翻译网关（doubao-gateway）会从消息里正则提取「翻译成X」来判定目标语言，
+        // 而「智能中英」需要走它自己的自动兜底（中文→英文、非中文→中文），
+        // 一旦写死「翻译成简体中文」，中文原文就会原样返回、看起来像没翻译。
         _ => format!(
-            "你是专业翻译引擎。用户消息就是待翻译的原文，请先自动判断翻译方向：\n\
-- 若原文主要是外语（英文、日文、韩文等），翻译成简体中文；\n\
-- 若原文本身已经是中文，翻译成自然地道的英文。{}",
+            "你是专业翻译引擎。用户消息就是待翻译的原文，请自动判断输出语言：\n\
+- 原文主要是外语（英文、日文、韩文等）时，用简体中文输出；\n\
+- 原文本身已经是中文时，用地道英文输出。{}",
             OUTPUT_RULES
         ),
     }

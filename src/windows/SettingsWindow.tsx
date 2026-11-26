@@ -23,9 +23,11 @@ import {
 } from "lucide-react";
 import {
   api,
+  isTranslateGateway,
   REASONING_EFFORT_OPTIONS,
   type AppSettings,
   type ProviderConfig,
+  type ProviderKind,
   type ReasoningEffort,
 } from "../lib/tauri";
 
@@ -468,6 +470,7 @@ export function SettingsWindow() {
       apiKey: "",
       model: tpl.model,
       isBuiltin: false,
+      kind: "chat",
     };
     const nextSettings = syncActiveFields(
       { ...settings, providers: [...settings.providers, nextProvider] },
@@ -838,6 +841,15 @@ export function SettingsWindow() {
             </div>
           </div>
 
+          {isTranslateGateway(settings) && (
+            <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-700 dark:text-amber-400 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                当前供应商是「翻译网关」，只能翻译。划词「解释」与「弹窗助手」需要对话模型，请切换到「对话模型」类型的供应商。
+              </span>
+            </div>
+          )}
+
           {/* Provider Switcher Tabs */}
           <div className="flex flex-wrap items-center gap-1.5">
             {settings.providers.map((p) => {
@@ -948,6 +960,25 @@ export function SettingsWindow() {
                   className="w-full h-8.5 px-2.5 rounded-lg bg-[var(--surface)] border border-[var(--border-color)] focus:border-[var(--accent)] outline-none text-[12px] font-mono select-text"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[12px] text-[var(--text-secondary)]">接口类型</div>
+                <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  {activeProvider.kind === "translate"
+                    ? "翻译网关：只做翻译（直连并对 target_lang 显式指定），解释与弹窗助手不可用"
+                    : "对话模型：翻译 / 解释 / 弹窗助手都可用"}
+                </div>
+              </div>
+              <select
+                value={activeProvider.kind ?? "chat"}
+                onChange={(e) => updateActiveProvider({ kind: e.target.value as ProviderKind })}
+                className="h-8 px-2.5 rounded-lg bg-[var(--surface)] border border-[var(--border-color)] text-[12px] outline-none cursor-pointer shrink-0"
+              >
+                <option value="chat">对话模型</option>
+                <option value="translate">翻译网关（只翻译）</option>
+              </select>
             </div>
 
             <div className="space-y-2 pt-0.5">

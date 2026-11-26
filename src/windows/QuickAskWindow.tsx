@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  AlertTriangle,
   Brain,
   Check,
   ChevronDown,
@@ -18,6 +19,7 @@ import {
 import {
   api,
   createRequestId,
+  isTranslateGateway,
   REASONING_EFFORT_OPTIONS,
   type AiChunkPayload,
   type AiDonePayload,
@@ -51,6 +53,7 @@ export function QuickAskWindow() {
   const [modelName, setModelName] = useState("deepseek-v4.1-flash");
   const [effort, setEffort] = useState<ReasoningEffort>("medium");
   const [showReasoning, setShowReasoning] = useState(false);
+  const [gatewayMode, setGatewayMode] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -63,6 +66,7 @@ export function QuickAskWindow() {
       setModelName(s.model);
       setShowReasoning(s.showReasoning);
       setEffort(s.quickAskReasoningEffort || "medium");
+      setGatewayMode(isTranslateGateway(s));
     });
   }, []);
 
@@ -85,6 +89,7 @@ export function QuickAskWindow() {
         setModelName(ev.payload.model);
         setShowReasoning(ev.payload.showReasoning);
         setEffort(ev.payload.quickAskReasoningEffort || "medium");
+        setGatewayMode(isTranslateGateway(ev.payload));
       }),
       listen("quick-ask:focus", () => {
         setTimeout(() => textareaRef.current?.focus(), 20);
@@ -139,7 +144,7 @@ export function QuickAskWindow() {
 
   const handleSend = async () => {
     const prompt = input.trim();
-    if (!prompt || streaming) return;
+    if (!prompt || streaming || gatewayMode) return;
 
     const history: ChatMessage[] = messages
       .filter((m) => m.content.trim().length > 0)
@@ -282,6 +287,16 @@ export function QuickAskWindow() {
 
         {/* Messages / Empty Spotlight Welcome */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3.5 space-y-3.5">
+          {gatewayMode && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-700 dark:text-amber-400 flex items-start gap-2 select-text">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                当前供应商是「翻译网关」，只能翻译。弹窗助手需要对话模型，请到「设置 →
+                模型供应商」新增或切换一个「对话模型」类型的供应商。
+              </span>
+            </div>
+          )}
+
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center py-6">
               <div className="w-11 h-11 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center mb-3">
@@ -433,7 +448,7 @@ export function QuickAskWindow() {
               <button
                 type="button"
                 onClick={() => void handleSend()}
-                disabled={!input.trim()}
+                disabled={!input.trim() || gatewayMode}
                 className="h-8 px-3 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-35 flex items-center gap-1.5 text-[12.5px] font-medium shrink-0 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
